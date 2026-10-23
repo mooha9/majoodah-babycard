@@ -8,6 +8,8 @@
 <meta name="description" content="صمّم فيديو بشارة مولود عمودياً للواتساب والإنستقرام: ٨ قوالب مطرّزة بحركة هادئة، اسم المولود بخط عربي، أبيات ترحيب، والدان وتاريخ هجري وميلادي — يُنشأ داخل جهازك.">
 <meta property="og:title" content="فيديو بشارة مولود — مجودة"><meta property="og:description" content="صمّم فيديو بشارة مولود عمودياً للواتساب والإنستقرام: ٨ قوالب مطرّزة بحركة هادئة، اسم المولود بخط عربي، أبيات ترحيب، والدان وتاريخ هجري وميلادي — يُنشأ داخل جهازك."><meta property="og:type" content="website">
 <meta name="theme-color" content="#0a6d73">
+<script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','1674201127424097');fbq('track','PageView');fbq('track','ViewContent',{content_name:'فيديو بشارة مولود',content_ids:['275855370'],content_type:'product',value:39,currency:'SAR'});</script>
+<noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1674201127424097&ev=PageView&noscript=1"/></noscript>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Baloo+Bhaijaan+2:wght@600;700;800&family=Aref+Ruqaa:wght@400;700&family=Katibeh&family=Amiri:wght@400;700&family=Rakkas&family=Reem+Kufi:wght@500;700&family=El+Messiri:wght@400;500;600&family=Noto+Naskh+Arabic:wght@400;500;600&family=Cormorant+Garamond:wght@500;600&display=swap">
 <style>
@@ -3048,6 +3050,7 @@ var BCX = (function () {
   function fname(ext) { return 'بشارة-مولود-' + ((S.name || 'مولود').trim().replace(/[\\/:*?"<>|\s]+/g, '-')) + '.' + ext; }
   async function doExport() {
     if (abort) return;
+    try { window.fbq && fbq('trackCustom', 'VideoExport', {activated: !!(S && S.activated)}); } catch (_) {}
     showView('export');
     var btn = $('#btnExport'), msg = $('#expMsg'), prog = $('#prog'), bar = prog.firstElementChild;
     btn.disabled = true; $('#btnGo').disabled = true; $('#btnCancel').hidden = false; prog.hidden = false; bar.style.width = '0'; $('#result').hidden = true;
