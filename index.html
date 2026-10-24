@@ -3070,7 +3070,8 @@ var BCX = (function () {
       window.__lastExport = res;
       if (lastURL) URL.revokeObjectURL(lastURL);
       lastURL = URL.createObjectURL(res.blob);
-      var v = $('#outVid'); v.src = lastURL + '#t=' + Math.max(0, S.dur - 1.5); // تظهر البطاقة مكتملة قبل التشغيل $('#result').hidden = false;
+      var v = $('#outVid'); v.src = lastURL + '#t=' + Math.max(0, S.dur - 1.5); // تظهر البطاقة مكتملة قبل التشغيل
+      $('#result').hidden = false;
       var dl = $('#btnDl'); dl.href = lastURL; dl.download = fname(res.ext);
       var file = null; try { file = new File([res.blob], fname(res.ext), { type: res.blob.type }); } catch (e) {}
       var canShare = file && navigator.canShare && navigator.canShare({ files: [file] });
