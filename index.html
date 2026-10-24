@@ -120,6 +120,8 @@ select::-ms-expand{display:none}
 .tip{background:var(--must-soft);color:var(--ink);border-radius:12px;padding:10px 12px;font-size:13.5px;margin-top:10px}
 .foot{color:var(--muted);font-size:12.5px;text-align:center;margin-top:24px}
 .foot a{color:var(--teal)}
+
+.halal{margin:4px 0 12px;padding:10px 14px;border-radius:12px;background:rgba(225,162,58,.12);border:1px solid rgba(225,162,58,.45);font-size:14px;line-height:1.7;font-weight:600}
 </style>
 </head>
 <body>
@@ -217,7 +219,8 @@ select::-ms-expand{display:none}
    </div>
    <div class="card">
     <h2>أرفق صوت <span class="badge">اختياري</span></h2>
-    <p class="lead">الفيديو صامت افتراضياً. يمكنك إرفاق ملف صوتي من جهازك (MP3 أو M4A أو WAV أو AAC): تسجيل صوتي، أو نشيد، أو ما تختاره. يُقصّ على مدة الفيديو مع تلاشٍ ناعم في آخره.</p>
+    <p class="lead">الفيديو صامت افتراضياً. يمكنك إرفاق ملف صوتي من جهازك (MP3 أو M4A أو WAV أو AAC): تسجيل صوتي أو نشيد. يُقصّ على مدة الفيديو مع تلاشٍ ناعم في آخره.</p>
+    <p class="halal">🤍 نتمنى منك عدم استخدام صوت فيه موسيقى، لأنها تُغضب الله ولا تجوز. اختر تسجيلاً صوتياً أو نشيداً بلا موسيقى.</p>
     <label class="drop" id="audioDrop"><span id="audioTxt">اضغط لاختيار ملف صوتي</span><input type="file" id="audioFile" accept="audio/*,.mp3,.m4a,.wav,.aac" hidden></label>
     <div class="audiobox" id="audioBox" hidden>
      <b id="audioName"></b>
