@@ -2736,7 +2736,9 @@ var BCX = (function () {
     rr.draw(ctx, 0);
     var stream = cv.captureStream(FPS), ac = null, src = null;
     if (o.audio) {
-      var AC = window.AudioContext || window.webkitAudioContext; ac = new AC({ sampleRate: 48000 });
+      var AC = window.AudioContext || window.webkitAudioContext;
+      // سفاري/آيفون: سياق الصوت لازم يُفتح أثناء ضغطة المستخدم وإلا يبقى «معلّقاً» ويخرج الفيديو صامتاً — نستخدم السياق المفتوح مسبقاً إن وُجد
+      ac = o.audioContext || new AC({ sampleRate: 48000 });
       var buf = await prepareAudio(o.audio, { dur: rr.D, offset: o.audioOffset, volume: o.audioVolume });
       var dest = ac.createMediaStreamDestination(); src = ac.createBufferSource(); src.buffer = buf; src.connect(dest);
       dest.stream.getAudioTracks().forEach(function (tr) { stream.addTrack(tr); });
@@ -2748,7 +2750,9 @@ var BCX = (function () {
     rec.ondataavailable = function (e) { if (e.data && e.data.size) parts.push(e.data); };
     var done = new Promise(function (r) { rec.onstop = r; });
     var t0 = performance.now();
-    rec.start(250); if (src) { await ac.resume(); src.start(); }
+    if (src && ac.state !== 'running') { try { await Promise.race([ac.resume(), new Promise(function (r) { setTimeout(r, 1500); })]); } catch (e) {} }
+    if (src && ac.state !== 'running') throw new Error('audio-suspended');
+    rec.start(250); if (src) src.start();
     await new Promise(function (resolve) {
       (function tick() {
         var tt = (performance.now() - t0) / 1000;
@@ -2759,7 +2763,7 @@ var BCX = (function () {
         requestAnimationFrame(tick);
       })();
     });
-    rec.stop(); await done; stream.getTracks().forEach(function (t) { t.stop(); }); if (ac) ac.close();
+    rec.stop(); await done; stream.getTracks().forEach(function (t) { t.stop(); }); if (ac && ac !== o.audioContext) ac.close();
     if (o.signal && o.signal.aborted) throw new Error('aborted');
     var type = (mime || 'video/webm').split(';')[0];
     o.onProgress && o.onProgress(1, 'done');
@@ -2769,7 +2773,13 @@ var BCX = (function () {
   /* يختار المسار: WebCodecs أولاً؛ وإن طُلب صوت ولا يدعم المتصفح ترميزه، يسجّل بالزمن الحقيقي إن أمكن، وإلا يصدّر بلا صوت مع تنبيه */
   async function exportVideo(o) {
     var cap = await capabilities();
-    if (cap.webcodecs && (!o.audio || cap.audioEnc)) return exportWebCodecs(o);
+    if (o.forceRecorder && cap.recorder) return exportRecorder(o); // للاختبار: ?rec=1 يحاكي مسار سفاري
+    if (cap.webcodecs && (!o.audio || cap.audioCodec === 'aac')) return exportWebCodecs(o);
+    if (o.audio && cap.recorderMp4) {
+      try { o.onNote && o.onNote('لإرفاق الصوت يُسجَّل الفيديو بالزمن الحقيقي (قرابة ' + Math.round(o.dur || 14) + ' ثانية) — أبقِ الصفحة مفتوحة.'); return await exportRecorder(o); }
+      catch (e) { if (e && e.message === 'aborted') throw e; if (!cap.audioEnc) throw e; }
+    }
+    if (cap.webcodecs && o.audio && cap.audioEnc) return exportWebCodecs(o);
     if (o.audio && cap.recorderMp4) { o.onNote && o.onNote('هذا المتصفح لا يرمّز الصوت مباشرة، لذلك سيُسجَّل الفيديو بالزمن الحقيقي (قرابة ' + Math.round(o.dur || 14) + ' ثانية) — أبقِ الصفحة مفتوحة.'); return exportRecorder(o); }
     if (cap.webcodecs) { if (o.audio) o.onNote && o.onNote('هذا المتصفح لا يدعم إضافة الصوت إلى الفيديو، فسيُصدَّر بلا صوت. جرّب Chrome أو Safari الأحدث لإرفاق الصوت.'); var oo = Object.assign({}, o, { audio: null }); var r = await exportWebCodecs(oo); r.audio = o.audio ? 'unsupported' : 'none'; return r; }
     if (cap.recorder) { o.onNote && o.onNote('متصفحك قديم بعض الشيء: سيُسجَّل الفيديو بالزمن الحقيقي' + (cap.recorderMp4 ? '.' : ' بصيغة WebM (قد يحتاج تحويلاً قبل رفعه لبعض التطبيقات).')); return exportRecorder(o); }
@@ -3078,6 +3088,8 @@ var BCX = (function () {
   function fname(ext) { return 'بشارة-مولود-' + ((S.name || 'مولود').trim().replace(/[\\/:*?"<>|\s]+/g, '-')) + '.' + ext; }
   async function doExport() {
     if (abort) return;
+    var unlockedAC = null;
+    if (AUD.buf) { try { var ACx = window.AudioContext || window.webkitAudioContext; unlockedAC = new ACx({ sampleRate: 48000 }); var sb = unlockedAC.createBufferSource(); sb.buffer = unlockedAC.createBuffer(1, 1, 48000); sb.connect(unlockedAC.destination); sb.start(0); unlockedAC.resume(); } catch (e) { unlockedAC = null; } }
     if (ACTIVE && CODE && QUOTA && QUOTA.left <= 0) { setActive(false); showView('export'); exhausted(); return; }
     try { window.fbq && fbq('trackCustom', 'VideoExport', {activated: !!(S && S.activated)}); } catch (_) {}
     showView('export');
@@ -3092,11 +3104,14 @@ var BCX = (function () {
       var res = await BCX.exportVideo({
         scale: scale, dur: S.dur, signal: abort.signal,
         makeRenderer: function (s) { return BC.renderer(S, s, { wm: !ACTIVE }); },
-        audio: AUD.buf, audioOffset: AUD.offset, audioVolume: AUD.vol,
+        audio: AUD.buf, audioOffset: AUD.offset, audioVolume: AUD.vol, audioContext: unlockedAC, forceRecorder: /[?&]rec=1/.test(location.search),
         onProgress: function (p, ph) { bar.style.width = Math.round(p * 100) + '%'; msg.textContent = (ph === 'record' ? 'جارٍ التسجيل… ' : 'جارٍ إنشاء الفيديو… ') + AR(Math.round(p * 100)) + '٪'; },
         onNote: function (n) { toast(n); $('#expTip').textContent = n; }
       });
       window.__lastExport = res;
+      if (AUD.buf && res.audio !== 'unsupported') {
+        try { var head = new Uint8Array(await res.blob.slice(0, Math.min(res.blob.size, 4e6)).arrayBuffer()), txt = ''; for (var bi = 0; bi < head.length; bi++) txt += String.fromCharCode(head[bi]); if (txt.indexOf('soun') < 0 && txt.indexOf('A_OPUS') < 0 && txt.indexOf('OpusHead') < 0) res.audio = 'missing'; } catch (e) {}
+      }
       if (ACTIVE && CODE) {
         msg.textContent = 'جارٍ تسجيل التحميل…';
         var c = await api('claim');
@@ -3113,14 +3128,15 @@ var BCX = (function () {
       $('#btnShare').hidden = !canShare;
       $('#btnShare').onclick = function () { navigator.share({ files: [file], title: 'فيديو بشارة مولود' }).catch(function () {}); };
       msg.className = 'msg ok';
-      msg.textContent = 'جاهز! ' + AR((res.blob.size / 1048576).toFixed(1)) + ' ميجا · أُنشئ في ' + AR((res.ms / 1000).toFixed(1)) + ' ث' + (ACTIVE && QUOTA ? (QUOTA.left > 0 ? ' · باقي ' + AR(QUOTA.left) + ' من ' + AR(QUOTA.limit) + ' تحميلات لهذا الكود' : ' · هذا آخر تحميل لهذا الكود — احفظه الآن') : '') + (res.audio === 'unsupported' ? ' · بلا صوت (المتصفح لا يدعم إضافة الصوت)' : '') + (ACTIVE ? '' : ' · نسخة معاينة');
+      msg.textContent = 'جاهز! ' + AR((res.blob.size / 1048576).toFixed(1)) + ' ميجا · أُنشئ في ' + AR((res.ms / 1000).toFixed(1)) + ' ث' + (ACTIVE && QUOTA ? (QUOTA.left > 0 ? ' · باقي ' + AR(QUOTA.left) + ' من ' + AR(QUOTA.limit) + ' تحميلات لهذا الكود' : ' · هذا آخر تحميل لهذا الكود — احفظه الآن') : '') + (res.audio === 'unsupported' ? ' · بلا صوت (المتصفح لا يدعم إضافة الصوت)' : res.audio === 'missing' ? ' · تنبيه: لم يُرفق الصوت — جرّب Chrome، أو أعد المحاولة وأبقِ الصفحة مفتوحة' : '') + (ACTIVE ? '' : ' · نسخة معاينة');
     } catch (e) {
       msg.className = 'msg err';
-      msg.textContent = e && e.message === 'aborted' ? 'أُلغي الإنشاء.' : e && e.message === 'unsupported' ? 'متصفحك لا يدعم إنشاء الفيديو. جرّب Safari أو Chrome الأحدث.' : 'تعذّر إنشاء الفيديو: ' + (e && e.message || e);
+      msg.textContent = e && e.message === 'aborted' ? 'أُلغي الإنشاء.' : e && e.message === 'unsupported' ? 'متصفحك لا يدعم إنشاء الفيديو. جرّب Safari أو Chrome الأحدث.' : e && e.message === 'audio-suspended' ? 'المتصفح أوقف الصوت. اضغط «إنشاء الفيديو» مرة ثانية.' : 'تعذّر إنشاء الفيديو: ' + (e && e.message || e);
       window.__lastError = String(e && e.stack || e);
     } finally {
       abort = null; btn.disabled = false; $('#btnGo').disabled = false; $('#btnCancel').hidden = true;
       if (wasPlaying) { restart(); setPlaying(true); }
+      if (unlockedAC) { try { unlockedAC.close(); } catch (e) {} }
       if (ACTIVE && QUOTA && QUOTA.left <= 0) { ACTIVE = false; var bb = $('#actBadge'); bb.textContent = 'معاينة'; bb.className = 'badge'; $('#btnAct').hidden = false; }
     }
   }
