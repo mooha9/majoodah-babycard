@@ -2793,6 +2793,32 @@ var BCX = (function () {
   var S = Object.assign(BC.defaults('f'), load('state', {}));
   if (!BC.byId[S.tpl]) S.tpl = '01';
   var ACTIVE = false;
+  // حدّ التحميل: ٣ تحميلات بالجودة الكاملة لكل كود يعدّها الخادم (rsvp.majoodah.com/api/babycard). إن تعذّر الوصول للخادم لا نمنع العميل.
+  var API = 'https://rsvp.majoodah.com/api/babycard/', BUY = 'https://majoodah.com/newborn-announcement-video/p275855370';
+  var CODE = '', QUOTA = null;
+  function api(path) {
+    return fetch(API + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: CODE }) })
+      .then(function (r) { if (r.status === 404 || r.status >= 500) return null; return r.json().then(function (b) { return { status: r.status, body: b }; }); })
+      .catch(function () { return null; });
+  }
+  function exhausted() {
+    var m = $('#expMsg');
+    $('#result').hidden = true;
+    m.className = 'msg err';
+    m.innerHTML = '';
+    m.appendChild(document.createTextNode('استخدمت تحميلات هذا الكود كلها (' + AR(QUOTA ? QUOTA.limit : 3) + '). لتحميل فيديو جديد بالجودة الكاملة '));
+    var a = document.createElement('a'); a.href = BUY; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'اطلب كوداً جديداً'; m.appendChild(a);
+    m.appendChild(document.createTextNode('، ثم اضغط «تفعيل» والصقه. المعاينة بالعلامة تبقى متاحة.'));
+  }
+  function refreshQuota() {
+    if (!CODE) return Promise.resolve();
+    return api('status').then(function (r) {
+      if (!r || r.status !== 200) return;
+      QUOTA = r.body;
+      if (QUOTA.left <= 0) { setActive(false); exhausted(); }
+      else renderExpInfo();
+    });
+  }
   var ICON = {
     play: '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>',
     pause: '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1" fill="currentColor"/><rect x="9.5" y="2.5" width="3" height="11" rx="1" fill="currentColor"/></svg>',
@@ -3023,7 +3049,8 @@ var BCX = (function () {
     if (!(window.crypto && crypto.subtle)) { m.className = 'msg err'; m.textContent = 'افتح الصفحة عبر https لتفعيل الكود.'; return Promise.resolve(false); }
     return sha(APPKEY + ':' + n.c).then(function (h) {
       if (HASHES.indexOf(h) < 0) { m.className = 'msg err'; m.textContent = 'الكود غير صحيح. تأكد من كتابته كما وصلك في رسالة الطلب.'; return false; }
-      save('act', n.pretty); setActive(true); m.className = 'msg ok'; m.textContent = 'تم التفعيل — حمّل الفيديو بجودة كاملة بلا علامة.';
+      save('act', n.pretty); CODE = n.pretty; QUOTA = null; setActive(true); m.className = 'msg ok'; m.textContent = 'تم التفعيل — حمّل الفيديو بجودة كاملة بلا علامة (' + AR(3) + ' تحميلات لكل كود).';
+      refreshQuota().then(function () { if (QUOTA && QUOTA.left <= 0) { m.className = 'msg err'; m.textContent = 'هذا الكود استُخدم في كل تحميلاته (' + AR(QUOTA.limit) + '). اطلب كوداً جديداً من المتجر.'; } });
       setTimeout(function () { $('#actPanel').hidden = true; }, 1400); toast('تم التفعيل'); return true;
     });
   }
@@ -3036,6 +3063,7 @@ var BCX = (function () {
   function renderExpInfo() {
     var info = $('#expInfo');
     var q = ACTIVE ? '1080×1920 — بلا علامة' : '540×960 مع علامة «معاينة» (فعّل الكود للجودة الكاملة)';
+    if (ACTIVE && QUOTA) q += ' · باقي ' + AR(QUOTA.left) + ' من ' + AR(QUOTA.limit) + ' تحميلات';
     var a = AUD.buf ? 'مرفق (' + AR(Math.round(Math.min(AUD.buf.duration - AUD.offset, S.dur))) + ' ث)' : 'بلا صوت';
     info.innerHTML = '';
     [['الجودة', q], ['المدة', AR(S.dur) + ' ثانية · ٣٠ إطاراً/ث'], ['الصوت', a], ['الصيغة', 'MP4 عمودي (H.264) يناسب واتساب وإنستقرام وسناب']].forEach(function (r) {
@@ -3050,6 +3078,7 @@ var BCX = (function () {
   function fname(ext) { return 'بشارة-مولود-' + ((S.name || 'مولود').trim().replace(/[\\/:*?"<>|\s]+/g, '-')) + '.' + ext; }
   async function doExport() {
     if (abort) return;
+    if (ACTIVE && CODE && QUOTA && QUOTA.left <= 0) { setActive(false); showView('export'); exhausted(); return; }
     try { window.fbq && fbq('trackCustom', 'VideoExport', {activated: !!(S && S.activated)}); } catch (_) {}
     showView('export');
     var btn = $('#btnExport'), msg = $('#expMsg'), prog = $('#prog'), bar = prog.firstElementChild;
@@ -3068,6 +3097,12 @@ var BCX = (function () {
         onNote: function (n) { toast(n); $('#expTip').textContent = n; }
       });
       window.__lastExport = res;
+      if (ACTIVE && CODE) {
+        msg.textContent = 'جارٍ تسجيل التحميل…';
+        var c = await api('claim');
+        if (c && c.status === 409) { QUOTA = c.body; setActive(false); exhausted(); return; }
+        if (c && c.status === 200) QUOTA = c.body;
+      }
       if (lastURL) URL.revokeObjectURL(lastURL);
       lastURL = URL.createObjectURL(res.blob);
       var v = $('#outVid'); v.src = lastURL + '#t=' + Math.max(0, S.dur - 1.5); // تظهر البطاقة مكتملة قبل التشغيل
@@ -3078,7 +3113,7 @@ var BCX = (function () {
       $('#btnShare').hidden = !canShare;
       $('#btnShare').onclick = function () { navigator.share({ files: [file], title: 'فيديو بشارة مولود' }).catch(function () {}); };
       msg.className = 'msg ok';
-      msg.textContent = 'جاهز! ' + AR((res.blob.size / 1048576).toFixed(1)) + ' ميجا · أُنشئ في ' + AR((res.ms / 1000).toFixed(1)) + ' ث' + (res.audio === 'unsupported' ? ' · بلا صوت (المتصفح لا يدعم إضافة الصوت)' : '') + (ACTIVE ? '' : ' · نسخة معاينة');
+      msg.textContent = 'جاهز! ' + AR((res.blob.size / 1048576).toFixed(1)) + ' ميجا · أُنشئ في ' + AR((res.ms / 1000).toFixed(1)) + ' ث' + (ACTIVE && QUOTA ? (QUOTA.left > 0 ? ' · باقي ' + AR(QUOTA.left) + ' من ' + AR(QUOTA.limit) + ' تحميلات لهذا الكود' : ' · هذا آخر تحميل لهذا الكود — احفظه الآن') : '') + (res.audio === 'unsupported' ? ' · بلا صوت (المتصفح لا يدعم إضافة الصوت)' : '') + (ACTIVE ? '' : ' · نسخة معاينة');
     } catch (e) {
       msg.className = 'msg err';
       msg.textContent = e && e.message === 'aborted' ? 'أُلغي الإنشاء.' : e && e.message === 'unsupported' ? 'متصفحك لا يدعم إنشاء الفيديو. جرّب Safari أو Chrome الأحدث.' : 'تعذّر إنشاء الفيديو: ' + (e && e.message || e);
@@ -3086,6 +3121,7 @@ var BCX = (function () {
     } finally {
       abort = null; btn.disabled = false; $('#btnGo').disabled = false; $('#btnCancel').hidden = true;
       if (wasPlaying) { restart(); setPlaying(true); }
+      if (ACTIVE && QUOTA && QUOTA.left <= 0) { ACTIVE = false; var bb = $('#actBadge'); bb.textContent = 'معاينة'; bb.className = 'badge'; $('#btnAct').hidden = false; }
     }
   }
   $('#btnExport').onclick = doExport;
@@ -3097,7 +3133,7 @@ var BCX = (function () {
   try { var q = new URLSearchParams(location.search); if (q.get('code')) code = q.get('code'); if (q.get('tpl') && BC.byId[q.get('tpl')]) S.tpl = q.get('tpl'); if (q.get('g')) BC.switchGender(S, q.get('g') === 'm' ? 'm' : 'f'); } catch (e) {}
   syncUI(); buildThumbs(); rebuild();
   requestAnimationFrame(loop); requestAnimationFrame(thumbLoop);
-  if (code) { var n = norm(code); if (n && window.crypto && crypto.subtle) sha(APPKEY + ':' + n.c).then(function (h) { if (HASHES.indexOf(h) >= 0) { save('act', n.pretty); setActive(true); } }); }
+  if (code) { var n = norm(code); if (n && window.crypto && crypto.subtle) sha(APPKEY + ':' + n.c).then(function (h) { if (HASHES.indexOf(h) >= 0) { save('act', n.pretty); CODE = n.pretty; setActive(true); refreshQuota(); } }); }
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { rebuild(); renderFonts(); });
   // واجهة للاختبار الآلي (puppeteer): ضبط الحالة والتصدير
   window.__bc = {
