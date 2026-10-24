@@ -2648,6 +2648,7 @@ var BCX = (function () {
     var list = [{ codec: 'mp4a.40.2', mux: 'aac' }, { codec: 'opus', mux: 'opus' }];
     for (var i = 0; i < list.length; i++) {
       var cfg = { codec: list[i].codec, sampleRate: 48000, numberOfChannels: 2, bitrate: 128000 };
+      if (list[i].mux === 'aac') cfg.aac = { format: 'aac' }; // AAC خام (لا ADTS) — المطلوب داخل MP4
       try { var r = await AudioEncoder.isConfigSupported(cfg); if (r && r.supported) return { cfg: cfg, mux: list[i].mux }; } catch (e) {}
     }
     return null;
@@ -2713,7 +2714,17 @@ var BCX = (function () {
     }
     await venc.flush(); venc.close();
     if (abuf) {
-      var aerr = null, aenc = new AudioEncoder({ output: function (c, m) { mux.addAudioChunk(c, m); }, error: function (e) { aerr = e; } });
+      // سفاري: قد يخرج AAC بترويسات ADTS أو بلا AudioSpecificConfig فيصير الصوت صامتاً عند التشغيل — نصلح الحالتين هنا
+      var ASC = new Uint8Array([0x11, 0x90]); // AAC-LC · 48kHz · ستيريو
+      var aerr = null, aenc = new AudioEncoder({ output: function (c, m) {
+        if (acfg.mux === 'aac') {
+          var raw = new Uint8Array(c.byteLength); c.copyTo(raw);
+          if (raw.length > 7 && raw[0] === 0xff && (raw[1] & 0xf6) === 0xf0) { var hl = (raw[1] & 1) ? 7 : 9; c = new EncodedAudioChunk({ type: c.type, timestamp: c.timestamp, duration: c.duration, data: raw.subarray(hl) }); }
+          if (m && m.decoderConfig && !m.decoderConfig.description) m = { decoderConfig: Object.assign({}, m.decoderConfig, { description: ASC }) };
+          if (!m || !m.decoderConfig) m = { decoderConfig: { codec: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2, description: ASC } };
+        }
+        mux.addAudioChunk(c, m);
+      }, error: function (e) { aerr = e; } });
       aenc.configure(acfg.cfg);
       var L = abuf.getChannelData(0), Rr = abuf.numberOfChannels > 1 ? abuf.getChannelData(1) : L, CH = 4800;
       for (var s = 0; s < L.length; s += CH) {
@@ -3131,6 +3142,7 @@ var BCX = (function () {
       $('#btnShare').hidden = !canShare;
       $('#btnShare').onclick = function () { navigator.share({ files: [file], title: 'فيديو بشارة مولود' }).catch(function () {}); };
       msg.className = 'msg ok';
+      if (/[?&]debug=1/.test(location.search)) BCX.capabilities().then(function (cp) { var d = document.createElement('div'); d.className = 'note'; d.dir = 'ltr'; d.textContent = 'DEBUG path=' + res.path + ' codec=' + (res.codec || '-') + ' audio=' + res.audio + ' type=' + res.blob.type + ' cap=' + JSON.stringify(cp) + ' UA=' + navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 140); $('#result').appendChild(d); });
       msg.textContent = 'جاهز! ' + AR((res.blob.size / 1048576).toFixed(1)) + ' ميجا · أُنشئ في ' + AR((res.ms / 1000).toFixed(1)) + ' ث' + (ACTIVE && QUOTA ? (QUOTA.left > 0 ? ' · باقي ' + AR(QUOTA.left) + ' من ' + AR(QUOTA.limit) + ' تحميلات لهذا الكود' : ' · هذا آخر تحميل لهذا الكود — احفظه الآن') : '') + (res.audio === 'unsupported' ? ' · بلا صوت (المتصفح لا يدعم إضافة الصوت)' : res.audio === 'missing' ? ' · تنبيه: لم يُرفق الصوت — جرّب Chrome، أو أعد المحاولة وأبقِ الصفحة مفتوحة' : '') + (ACTIVE ? '' : ' · نسخة معاينة');
     } catch (e) {
       msg.className = 'msg err';
